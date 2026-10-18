@@ -1,0 +1,27 @@
+{
+  "name": "voice-interviewer",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI voice interviewer built on LiveKit Agents (TypeScript): Next.js frontend, Express API, LiveKit agent worker",
+  "workspaces": [
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "dev": "concurrently -n api,agent,web -c blue,magenta,green \"npm run dev -w apps/api\" \"npm run dev -w apps/agent\" \"npm run dev -w apps/web\"",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:agent": "npm run dev -w apps/agent",
+    "dev:web": "npm run dev -w apps/web",
+    "agent:download-files": "npm run download-files -w apps/agent",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test:agent && npm run test:api",
+    "test:agent": "npx tsx scripts/agent-logic.test.ts",
+    "test:api": "node scripts/smoke-api.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}

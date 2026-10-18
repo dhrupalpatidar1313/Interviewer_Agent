@@ -1,0 +1,11 @@
+# Local LiveKit server for development. Uses the built-in dev keys: devkey / secret.
+# For production use LiveKit Cloud or a properly configured self-hosted deployment.
+services:
+  livekit:
+    image: livekit/livekit-server:latest
+    command: --dev --bind 0.0.0.0
+    ports:
+      - "7880:7880"          # HTTP / WebSocket signalling
+      - "7881:7881"          # WebRTC over TCP
+      - "7882:7882/udp"      # WebRTC over UDP
+    restart: unless-stopped
