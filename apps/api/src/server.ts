@@ -10,6 +10,8 @@ import { HttpError } from './http.js';
 import { internalRouter } from './routes/internal.js';
 import { interviewsRouter } from './routes/interviews.js';
 import { profileRouter } from './routes/profile.js';
+import swaggerUi from 'swagger-ui-express';
+import { swaggerDocument } from './swagger.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -23,6 +25,9 @@ app.use(cookieParser());
 app.use('/internal', internalRouter);
 
 app.use(express.json({ limit: '100kb' }));
+
+// The first argument sets the custom URL path
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true });

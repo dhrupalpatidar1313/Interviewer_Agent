@@ -49,7 +49,16 @@ In `.env`, set at minimum:
 - `OPENAI_API_KEY`, and `DEEPGRAM_API_KEY` for speech to text (without it the agent falls back to OpenAI transcription).
 - For LiveKit Cloud instead of Docker: set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` from your project.
 
-**No provider keys?** Set `MODEL_PROVIDER=inference` to use the LiveKit Inference gateway for STT, LLM and TTS. This needs LiveKit Cloud; it does not work against a self-hosted server.
+**No provider keys?** Set `MODEL_PROVIDER=inference` to use the LiveKit Inference gateway for STT, LLM and TTS. The gateway only accepts keys from a LiveKit Cloud project. With a local server, keep `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` for the local server and add the Cloud project's keys as `LIVEKIT_INFERENCE_API_KEY` / `LIVEKIT_INFERENCE_API_SECRET`.
+
+**Mixing providers.** `STT_PROVIDER`, `LLM_PROVIDER` and `TTS_PROVIDER` pick each stage on its own (see `.env.example`). For example, LiveKit Inference for speech and Groq for the LLM:
+
+```
+STT_PROVIDER=inference
+TTS_PROVIDER=inference
+LLM_PROVIDER=groq
+GROQ_API_KEY=...
+```
 
 Run each process separately if you prefer: `npm run dev:api`, `npm run dev:agent`, `npm run dev:web`.
 
@@ -93,7 +102,9 @@ All three apps read the single `.env` in the repository root. See `.env.example`
 | `API_URL` | web, agent | **Next.js bakes the rewrite target in at build time, so set `API_URL` when you run `next build`** |
 | `AGENT_NAME` | API, agent | Must match; it is the dispatch name |
 | `INTERVIEW_MAX_MINUTES` | API, agent | Default 25 |
-| `MODEL_PROVIDER` | agent | `plugins` (OpenAI, Deepgram) or `inference` (LiveKit Inference, Cloud only) |
+| `MODEL_PROVIDER` | agent | `plugins` (OpenAI, Deepgram) or `inference` (LiveKit Inference, needs Cloud project keys) |
+| `STT_PROVIDER`, `LLM_PROVIDER`, `TTS_PROVIDER` | agent | Optional per-stage override of `MODEL_PROVIDER`; Groq is available for STT and LLM |
+| `LIVEKIT_INFERENCE_API_KEY`, `LIVEKIT_INFERENCE_API_SECRET` | agent | Cloud project keys for the Inference gateway when `LIVEKIT_*` points at a local server |
 | `INTERVIEWER_NAME` | agent | Default "Alex"; the web app shows whatever the agent publishes |
 
 ## Project layout
@@ -157,7 +168,7 @@ The API smoke test (27 checks) covers signup/login, validation, resume upload an
 ## Troubleshooting
 
 - **The agent never joins.** Check the worker log shows it registered, that `AGENT_NAME` matches in `.env`, and that `LIVEKIT_URL` and keys are the same for the API and the agent.
-- **"Alex" is silent but connected.** Confirm `OPENAI_API_KEY` is set (and `DEEPGRAM_API_KEY` if you want Deepgram). The worker log shows provider errors.
+- **"Alex" is silent but connected.** Confirm the keys for the providers you picked are set (`OPENAI_API_KEY`, `DEEPGRAM_API_KEY`, `GROQ_API_KEY`, or `LIVEKIT_INFERENCE_API_KEY` / `_SECRET` for Inference). The worker log shows provider errors.
 - **Browser console shows the proxy failing.** `API_URL` was different when `next build` ran; rebuild with the right value.
 - **Mic blocked.** Allow microphone access for the site, then start a new interview from the dashboard (the blocked attempt is already spent).
 - **Warning about SQLite being experimental.** Expected on Node 22; it is the built-in `node:sqlite` module.

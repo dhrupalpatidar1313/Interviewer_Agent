@@ -22,6 +22,7 @@
     "test:api": "node scripts/smoke-api.mjs"
   },
   "devDependencies": {
-    "concurrently": "^9.2.0"
+    "concurrently": "^9.2.0",
+    "prettier": "^3.9.10"
   }
 }
