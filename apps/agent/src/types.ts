@@ -19,13 +19,30 @@ export interface CandidateContext {
   resume: { filename: string; text: string };
 }
 
+export type InterviewMode = 'demo' | 'byok';
+export type ModelStage = 'stt' | 'llm' | 'tts';
+
+/** One stage of a candidate's own models. The key is only ever held in memory for the length of the job. */
+export interface UserStageModel {
+  provider: string;
+  model: string;
+  /** TTS only: a voice name or id. */
+  voice?: string;
+  apiKey: string;
+}
+export type UserModels = Record<ModelStage, UserStageModel>;
+
 export interface InterviewContext {
   interviewId: string;
   userId: string;
   participantIdentity: string;
   status: string;
+  /** 'demo' runs on the platform's own models; 'byok' on `models`. */
+  mode: InterviewMode;
   maxMinutes: number;
   candidate: CandidateContext | null;
+  /** Present for byok interviews only. */
+  models: UserModels | null;
 }
 
 export interface TranscriptTurn {

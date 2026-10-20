@@ -75,6 +75,8 @@ export interface PromptState {
   elapsedMinutes: number;
   maxMinutes: number;
   timeNotice: 'soft' | 'hard' | null;
+  /** The free demo: short, and it never reaches the advanced stage. */
+  demo?: boolean;
 }
 
 function progressSummary(assessments: Assessment[]): string {
@@ -146,7 +148,11 @@ ${resumeText}
 ${LEVEL_CALIBRATION[profile.experienceLevel]}
 
 # Interview plan
-The interview always moves in this order: warm-up, fundamentals, intermediate (resume deep-dive), advanced, wrap-up. Aim for about ${state.maxMinutes} minutes in total; about ${state.elapsedMinutes} minutes have passed.
+${
+    state.demo
+      ? `This is a short DEMO interview. It covers only warm-up, fundamentals and intermediate (resume deep-dive), and then wrap-up: skip the advanced stage entirely, and mention near the end that a full interview with harder questions is available once they add their own API keys.\n`
+      : ''
+  }The interview always moves in this order: warm-up, fundamentals, intermediate (resume deep-dive), advanced, wrap-up. Aim for about ${state.maxMinutes} minutes in total; about ${state.elapsedMinutes} minutes have passed.
 Adapt to what you observe. If the candidate averages 4 or higher after two answers in a stage, you may advance early. If they average 2 or lower, stay a little longer with simpler adjacent questions and make the advanced stage a gentler stretch.
 Progress so far: ${progressSummary(state.assessments)}
 

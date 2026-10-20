@@ -1,16 +1,17 @@
 'use client';
 
 import {
+  useConnectionState,
   useLocalParticipant,
   useMultibandTrackVolume,
   useRoomContext,
   useTrackToggle,
-  useTranscriptions,
   useVoiceAssistant,
 } from '@livekit/components-react';
-import { Track, type LocalAudioTrack } from 'livekit-client';
+import { ConnectionState, Track, type LocalAudioTrack } from 'livekit-client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { formatClock } from '@/lib/format';
+import { formatClock, interviewErrorCopy } from '@/lib/format';
+import { useLiveTranscript } from '@/lib/useLiveTranscript';
 import { STAGES, type Stage } from '@/lib/types';
 import { StageRail } from './StageRail';
 
@@ -63,30 +64,78 @@ function stateCopy(state: string, name: string): string {
 
 const STAGE_IDS = new Set<string>(STAGES.map((s) => s.id));
 
+/** Topic the agent listens on to tell "I pressed End" apart from "my connection dropped". */
+const END_TOPIC = 'interview.control';
+/** How long to wait for the interviewer to appear before telling the candidate it is not coming. */
+const AGENT_JOIN_TIMEOUT_MS = 25_000;
+/** How long the interviewer may be missing mid-call before we say so. */
+const AGENT_LOST_TIMEOUT_MS = 20_000;
+
 /** Must render inside <LiveKitRoom>. */
-export function VoiceRoom({ maxMinutes }: { maxMinutes: number }) {
+export function VoiceRoom({ maxMinutes, onRetry }: { maxMinutes: number; onRetry: () => void }) {
   const room = useRoomContext();
-  const { state, audioTrack, agentAttributes } = useVoiceAssistant();
+  const { state, audioTrack, agentAttributes, agent } = useVoiceAssistant();
   const { localParticipant, microphoneTrack } = useLocalParticipant();
   const mic = useTrackToggle({ source: Track.Source.Microphone });
-  const segments = useTranscriptions();
+  const connectionState = useConnectionState();
+  const segments = useLiveTranscript();
   const seconds = useElapsedSeconds();
   const [confirming, setConfirming] = useState(false);
+  const [ending, setEnding] = useState(false);
+  const [agentIssue, setAgentIssue] = useState<'unavailable' | 'lost' | null>(null);
+  const agentSeen = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
+
+  // The interviewer never showing up (worker down) or vanishing mid-call must not look like silence.
+  useEffect(() => {
+    if (agent) {
+      agentSeen.current = true;
+      setAgentIssue(null);
+      return;
+    }
+    if (connectionState !== ConnectionState.Connected) return;
+    const timer = setTimeout(
+      () => setAgentIssue(agentSeen.current ? 'lost' : 'unavailable'),
+      agentSeen.current ? AGENT_LOST_TIMEOUT_MS : AGENT_JOIN_TIMEOUT_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [agent, connectionState]);
+
+  // Tell the agent this is a deliberate end (so it saves immediately instead of waiting for a rejoin), then leave.
+  async function endInterview() {
+    if (ending) return;
+    setEnding(true);
+    try {
+      await Promise.race([
+        localParticipant.publishData(new TextEncoder().encode(JSON.stringify({ type: 'end' })), {
+          reliable: true,
+          topic: END_TOPIC,
+        }),
+        new Promise((resolve) => setTimeout(resolve, 1500)),
+      ]);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    } catch {
+      // Best effort: without the signal the agent still saves, just after its short rejoin window.
+    }
+    await room.disconnect();
+  }
 
   const interviewer = agentAttributes?.interviewer_name || 'Alex';
   const rawStage = agentAttributes?.interview_stage;
   const stage: Stage | null = rawStage && STAGE_IDS.has(rawStage) ? (rawStage as Stage) : null;
   const micTrack = microphoneTrack?.track as LocalAudioTrack | undefined;
+  const reconnecting =
+    connectionState === ConnectionState.Reconnecting || connectionState === ConnectionState.SignalReconnecting;
+  const interviewError = interviewErrorCopy(agentAttributes?.interview_error);
 
   const turns = useMemo(
     () =>
       segments
         .map((s) => ({
-          id: s.streamInfo.id,
+          id: s.id,
           text: s.text,
-          mine: s.participantInfo.identity === localParticipant.identity,
-          at: s.streamInfo.timestamp,
+          mine: s.identity === localParticipant.identity,
+          at: s.at,
         }))
         .filter((t) => t.text.trim().length > 0)
         .sort((a, b) => a.at - b.at),
@@ -102,6 +151,31 @@ export function VoiceRoom({ maxMinutes }: { maxMinutes: number }) {
   return (
     <div className="room">
       <StageRail current={stage} />
+
+      {reconnecting && (
+        <p className="notice" role="status">
+          Your connection was interrupted. Reconnecting; keep this page open.
+        </p>
+      )}
+      {interviewError && (
+        <p className="alert" role="alert">
+          {interviewError}
+        </p>
+      )}
+      {agentIssue === 'unavailable' && (
+        <div className="alert" role="alert">
+          <p>The interviewer is not available right now. This interview has not been used up.</p>
+          <button type="button" className="btn" onClick={onRetry}>
+            Try again
+          </button>
+        </div>
+      )}
+      {agentIssue === 'lost' && (
+        <p className="alert" role="alert">
+          The interviewer disconnected. What you answered so far will be saved; your results will appear on your
+          dashboard.
+        </p>
+      )}
 
       <div className="room__grid">
         <section className="voice" aria-label="Voice conversation">
@@ -137,10 +211,10 @@ export function VoiceRoom({ maxMinutes }: { maxMinutes: number }) {
 
             {confirming ? (
               <>
-                <button type="button" className="btn btn--danger" onClick={() => void room.disconnect()}>
-                  End and save
+                <button type="button" className="btn btn--danger" onClick={() => void endInterview()} disabled={ending}>
+                  {ending ? 'Saving…' : 'End and save'}
                 </button>
-                <button type="button" className="btn btn--quiet" onClick={() => setConfirming(false)}>
+                <button type="button" className="btn btn--quiet" onClick={() => setConfirming(false)} disabled={ending}>
                   Keep going
                 </button>
               </>

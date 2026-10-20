@@ -2,10 +2,10 @@ import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
 import { requireAuth } from '../auth.js';
-import { loadProfile, loadResume, toIso } from '../candidate.js';
-import { run } from '../db.js';
+import { toIso } from '../candidate.js';
 import { HttpError } from '../http.js';
 import { extractResumeText, isAllowedResumeFile, MAX_RESUME_BYTES } from '../resume.js';
+import { store } from '../store/index.js';
 
 export const profileRouter = Router();
 profileRouter.use(requireAuth);
@@ -41,52 +41,27 @@ const profileSchema = z.object({
   about: z.string().trim().max(1500).default(''),
 });
 
-function resumeMeta(userId: string) {
-  const resume = loadResume(userId);
+async function resumeMeta(userId: string) {
+  const resume = await store.getResume(userId);
   if (!resume) return null;
   return {
     filename: resume.filename,
     charCount: resume.text.length,
-    uploadedAt: toIso(resume.uploaded_at),
+    uploadedAt: toIso(resume.uploadedAt),
     preview: resume.text.slice(0, 700),
   };
 }
 
-profileRouter.get('/', (req, res) => {
+profileRouter.get('/', async (req, res) => {
   const userId = req.user!.id;
-  res.json({ profile: loadProfile(userId) ?? null, resume: resumeMeta(userId) });
+  const [profile, resume] = await Promise.all([store.getProfile(userId), resumeMeta(userId)]);
+  res.json({ profile, resume });
 });
 
-profileRouter.put('/', (req, res) => {
+profileRouter.put('/', async (req, res) => {
   const p = profileSchema.parse(req.body);
-  run(
-    `INSERT INTO profiles
-       (user_id, full_name, target_role, experience_level, years_experience, skills, focus_areas,
-        linkedin_url, github_url, about, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-     ON CONFLICT(user_id) DO UPDATE SET
-       full_name = excluded.full_name,
-       target_role = excluded.target_role,
-       experience_level = excluded.experience_level,
-       years_experience = excluded.years_experience,
-       skills = excluded.skills,
-       focus_areas = excluded.focus_areas,
-       linkedin_url = excluded.linkedin_url,
-       github_url = excluded.github_url,
-       about = excluded.about,
-       updated_at = datetime('now')`,
-    req.user!.id,
-    p.fullName,
-    p.targetRole,
-    p.experienceLevel,
-    p.yearsExperience,
-    JSON.stringify(p.skills),
-    JSON.stringify(p.focusAreas),
-    p.linkedinUrl,
-    p.githubUrl,
-    p.about,
-  );
-  res.json({ profile: loadProfile(req.user!.id) });
+  const profile = await store.upsertProfile(req.user!.id, p);
+  res.json({ profile });
 });
 
 const upload = multer({
@@ -109,17 +84,11 @@ profileRouter.post('/resume', upload.single('resume'), async (req, res) => {
   // multer decodes the filename as latin1; restore UTF-8 names.
   const filename = Buffer.from(file.originalname, 'latin1').toString('utf8').slice(0, 200);
 
-  run(
-    `INSERT INTO resumes (user_id, filename, text, uploaded_at) VALUES (?, ?, ?, datetime('now'))
-     ON CONFLICT(user_id) DO UPDATE SET filename = excluded.filename, text = excluded.text, uploaded_at = datetime('now')`,
-    req.user!.id,
-    filename,
-    text,
-  );
-  res.status(201).json({ resume: resumeMeta(req.user!.id) });
+  await store.upsertResume(req.user!.id, { filename, text });
+  res.status(201).json({ resume: await resumeMeta(req.user!.id) });
 });
 
-profileRouter.delete('/resume', (req, res) => {
-  run('DELETE FROM resumes WHERE user_id = ?', req.user!.id);
+profileRouter.delete('/resume', async (req, res) => {
+  await store.deleteResume(req.user!.id);
   res.json({ ok: true });
 });

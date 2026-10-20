@@ -17,12 +17,17 @@
     "agent:download-files": "npm run download-files -w apps/agent",
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test:agent && npm run test:api",
+    "test": "npm run test:agent && npm run test:api-units && npm run test:api",
     "test:agent": "npx tsx scripts/agent-logic.test.ts",
-    "test:api": "node scripts/smoke-api.mjs"
+    "test:api": "node scripts/smoke-api.mjs",
+    "test:api-units": "npx tsx scripts/api-logic.test.mts",
+    "test:supabase": "node scripts/supabase-live-check.mjs",
+    "probe:gemini": "node scripts/probe-gemini.mjs",
+    "test:demo": "node scripts/demo-conversation-check.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.2.0",
+    "jose": "^6.0.0",
     "prettier": "^3.9.10"
   }
 }

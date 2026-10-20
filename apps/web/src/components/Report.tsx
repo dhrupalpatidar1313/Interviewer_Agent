@@ -47,8 +47,9 @@ export function Report({ interview }: { interview: InterviewDetail }) {
       {interview.status === 'failed' && !spoke && (
         <div className="notice" role="status">
           <p>
-            We did not hear any answers, so there is nothing to assess. Check that your microphone is allowed for this
-            site, then start a new interview from your dashboard.
+            {interview.endedBy === 'provider_error'
+              ? 'The interviewer had a technical problem before you could answer, so there is nothing to assess. Please start a new interview from your dashboard in a few minutes.'
+              : 'We did not hear any answers, so there is nothing to assess. Check that your microphone is allowed for this site, then start a new interview from your dashboard.'}
           </p>
         </div>
       )}

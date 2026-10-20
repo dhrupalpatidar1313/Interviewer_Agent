@@ -13,23 +13,18 @@ export const swaggerDocument = {
   ],
   tags: [
     { name: 'Health', description: 'System health check' },
-    { name: 'Auth', description: 'User registration, login, session validation' },
+    { name: 'Auth', description: 'Accounts are Supabase Auth users: sign up, sign in and password reset happen against Supabase, and the API only verifies the access token' },
+    { name: 'Providers', description: 'Bring-your-own provider keys, model choices, and whether the next interview is the free demo' },
     { name: 'Profile', description: 'Candidate profile and resume management' },
     { name: 'Interviews', description: 'Interview creation, history, and LiveKit token issuance' },
   ],
   components: {
     securitySchemes: {
-      cookieAuth: {
-        type: 'apiKey',
-        in: 'cookie',
-        name: 'vi_token',
-        description: 'JWT session cookie set on login/signup',
-      },
       bearerAuth: {
         type: 'http',
         scheme: 'bearer',
         bearerFormat: 'JWT',
-        description: 'Optional Authorization Bearer token header',
+        description: 'The Supabase Auth access token: Authorization: Bearer <access_token>',
       },
     },
     schemas: {
@@ -130,102 +125,11 @@ export const swaggerDocument = {
         },
       },
     },
-    '/api/auth/signup': {
-      post: {
-        tags: ['Auth'],
-        summary: 'Register a new user account',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['name', 'email', 'password'],
-                properties: {
-                  name: { type: 'string', example: 'Jane Doe' },
-                  email: { type: 'string', format: 'email', example: 'jane@example.com' },
-                  password: { type: 'string', format: 'password', minLength: 8, example: 'secret1234' },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          '201': {
-            description: 'Account created and session cookie issued',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { user: { $ref: '#/components/schemas/User' } },
-                },
-              },
-            },
-          },
-          '400': { description: 'Validation error', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
-          '409': { description: 'Email already exists', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
-        },
-      },
-    },
-    '/api/auth/login': {
-      post: {
-        tags: ['Auth'],
-        summary: 'Sign in with email and password',
-        requestBody: {
-          required: true,
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                required: ['email', 'password'],
-                properties: {
-                  email: { type: 'string', format: 'email', example: 'jane@example.com' },
-                  password: { type: 'string', format: 'password', example: 'secret1234' },
-                },
-              },
-            },
-          },
-        },
-        responses: {
-          '200': {
-            description: 'Authenticated successfully and session cookie issued',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { user: { $ref: '#/components/schemas/User' } },
-                },
-              },
-            },
-          },
-          '401': { description: 'Invalid email or password', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
-        },
-      },
-    },
-    '/api/auth/logout': {
-      post: {
-        tags: ['Auth'],
-        summary: 'Clear user session cookie',
-        responses: {
-          '200': {
-            description: 'Logged out successfully',
-            content: {
-              'application/json': {
-                schema: {
-                  type: 'object',
-                  properties: { ok: { type: 'boolean', example: true } },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
     '/api/auth/me': {
       get: {
         tags: ['Auth'],
         summary: 'Get current user session and onboarding status',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         responses: {
           '200': {
             description: 'Current session user',
@@ -252,11 +156,81 @@ export const swaggerDocument = {
         },
       },
     },
+    '/api/providers': {
+      get: {
+        tags: ['Providers'],
+        summary: 'Providers, which keys are saved (last 4 only), the model choices, and how the next interview will run',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': { description: 'entitlement.kind is demo (one free interview), byok (own keys ready) or blocked (with a code and message)' },
+          '401': { description: 'Unauthorized', content: { 'application/json': { schema: { $ref: '#/components/schemas/ErrorResponse' } } } },
+        },
+      },
+    },
+    '/api/providers/keys/{provider}': {
+      put: {
+        tags: ['Providers'],
+        summary: 'Check a provider API key with the provider, then store it encrypted',
+        description: 'Providers: openai, google, groq, deepgram, elevenlabs, cartesia. The key is never returned; only its last 4 characters are.',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }],
+        requestBody: {
+          required: true,
+          content: { 'application/json': { schema: { type: 'object', required: ['apiKey'], properties: { apiKey: { type: 'string' } } } } },
+        },
+        responses: {
+          '200': { description: 'Saved. Includes the models the key can use.' },
+          '422': { description: 'The provider rejected the key (code KEY_INVALID)' },
+          '502': { description: 'The provider could not be reached (code PROVIDER_UNREACHABLE)' },
+          '503': { description: 'Key storage is not configured on this server (code KEYS_NOT_CONFIGURED)' },
+        },
+      },
+      delete: {
+        tags: ['Providers'],
+        summary: 'Remove a saved key; stages that used it are un-selected',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Removed' } },
+      },
+    },
+    '/api/providers/{provider}/models': {
+      get: {
+        tags: ['Providers'],
+        summary: 'Models available to the saved key, sorted into speech-to-text, language and voice models',
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: 'provider', in: 'path', required: true, schema: { type: 'string' } }],
+        responses: { '200': { description: 'Model lists' }, '404': { description: 'No key saved for this provider (KEY_REQUIRED)' } },
+      },
+    },
+    '/api/providers/selection': {
+      put: {
+        tags: ['Providers'],
+        summary: 'Choose a provider, model and (for voice) voice for each stage',
+        description: 'A stage left out is unchanged; null clears it. All three stages must be chosen, each with a saved key, for the next interview to run on the candidate’s own keys.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  stt: { type: 'object', nullable: true, properties: { provider: { type: 'string' }, model: { type: 'string' } } },
+                  llm: { type: 'object', nullable: true, properties: { provider: { type: 'string' }, model: { type: 'string' } } },
+                  tts: { type: 'object', nullable: true, properties: { provider: { type: 'string' }, model: { type: 'string' }, voice: { type: 'string' } } },
+                },
+              },
+            },
+          },
+        },
+        responses: { '200': { description: 'Saved, with the resulting entitlement' }, '400': { description: 'Provider cannot serve that stage, or no key is saved for it' } },
+      },
+    },
     '/api/profile': {
       get: {
         tags: ['Profile'],
         summary: 'Get candidate profile and uploaded resume metadata',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         responses: {
           '200': {
             description: 'Profile and resume details',
@@ -278,7 +252,7 @@ export const swaggerDocument = {
       put: {
         tags: ['Profile'],
         summary: 'Create or update candidate profile',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -308,7 +282,7 @@ export const swaggerDocument = {
       post: {
         tags: ['Profile'],
         summary: 'Upload candidate resume (PDF, DOCX, TXT up to 5 MB)',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -346,7 +320,7 @@ export const swaggerDocument = {
       delete: {
         tags: ['Profile'],
         summary: 'Delete uploaded resume',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         responses: {
           '200': {
             description: 'Resume removed',
@@ -367,7 +341,7 @@ export const swaggerDocument = {
       get: {
         tags: ['Interviews'],
         summary: 'List user interview history',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         responses: {
           '200': {
             description: 'List of past and active interviews',
@@ -391,7 +365,7 @@ export const swaggerDocument = {
       post: {
         tags: ['Interviews'],
         summary: 'Create a new interview session',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         responses: {
           '201': {
             description: 'Interview session created',
@@ -415,7 +389,7 @@ export const swaggerDocument = {
       get: {
         tags: ['Interviews'],
         summary: 'Get full interview details, transcript, assessments, and feedback report',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',
@@ -435,7 +409,7 @@ export const swaggerDocument = {
       post: {
         tags: ['Interviews'],
         summary: 'Generate a LiveKit room token to join the voice interview',
-        security: [{ cookieAuth: [] }, { bearerAuth: [] }],
+        security: [{ bearerAuth: [] }],
         parameters: [
           {
             name: 'id',

@@ -1,12 +1,10 @@
-import bcrypt from 'bcryptjs';
+import { fromSupabaseUrl } from '@supabase/server';
+import { verifyCredentials } from '@supabase/server/core';
 import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import { randomUUID } from 'node:crypto';
-import { z } from 'zod';
-import { one, run } from './db.js';
-import { env, isProd } from './env.js';
-import { HttpError, rateLimit } from './http.js';
+import { env } from './env.js';
+import { HttpError } from './http.js';
+import { store } from './store/index.js';
 
 export interface AuthUser {
   id: string;
@@ -20,96 +18,57 @@ declare module 'express-serve-static-core' {
   }
 }
 
-const COOKIE_NAME = 'vi_token';
-const TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7;
+// Accounts are Supabase Auth users. The browser signs in with Supabase directly and sends its access token as
+// "Authorization: Bearer <jwt>"; the API only verifies it. Pinning issuer and audience means a token from any other
+// project or service that happens to share a JWKS is refused.
+const ISSUER = fromSupabaseUrl(env.SUPABASE_URL);
+const AUDIENCE = 'authenticated';
 
-interface UserRow {
-  id: string;
-  email: string;
-  name: string;
-  password_hash: string;
+function readBearer(req: Request): string | null {
+  const header = req.header('authorization') ?? '';
+  if (!/^Bearer\s+/i.test(header)) return null;
+  return header.replace(/^Bearer\s+/i, '').trim() || null;
 }
 
-function issueSession(res: Response, user: AuthUser) {
-  const token = jwt.sign({ sub: user.id }, env.JWT_SECRET, { expiresIn: TOKEN_TTL_SECONDS });
-  res.cookie(COOKIE_NAME, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: isProd,
-    maxAge: TOKEN_TTL_SECONDS * 1000,
-    path: '/',
-  });
-}
+export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
+  const token = readBearer(req);
+  if (!token) throw new HttpError(401, 'Please sign in to continue.', 'UNAUTHENTICATED');
 
-export function requireAuth(req: Request, _res: Response, next: NextFunction) {
-  const header = req.header('authorization');
-  const token = req.cookies?.[COOKIE_NAME] ?? (header?.startsWith('Bearer ') ? header.slice(7) : undefined);
-  if (!token) throw new HttpError(401, 'Please sign in to continue.');
-
-  let userId: string;
-  try {
-    const payload = jwt.verify(token, env.JWT_SECRET);
-    if (typeof payload === 'string' || typeof payload.sub !== 'string') throw new Error('bad payload');
-    userId = payload.sub;
-  } catch {
-    throw new HttpError(401, 'Your session has expired. Please sign in again.');
+  const { data: auth, error } = await verifyCredentials(
+    { token, apikey: null },
+    { auth: 'user', issuer: ISSUER, audience: AUDIENCE },
+  );
+  if (error) {
+    // 500 means we could not verify at all (for example the JWKS could not be fetched); the session may be fine.
+    if (error.status >= 500) {
+      console.error('Token verification unavailable:', error.code, error.message);
+      throw new HttpError(503, 'Sign-in is temporarily unavailable. Please try again in a moment.', 'AUTH_UNAVAILABLE');
+    }
+    throw new HttpError(401, 'Your session has expired. Please sign in again.', 'SESSION_EXPIRED');
   }
 
-  const row = one<UserRow>('SELECT id, email, name, password_hash FROM users WHERE id = ?', userId);
-  if (!row) throw new HttpError(401, 'Account not found.');
-  req.user = { id: row.id, email: row.email, name: row.name };
+  const claims = auth?.userClaims;
+  if (!claims?.id || auth?.jwtClaims?.is_anonymous) {
+    throw new HttpError(401, 'Please sign in with an account to continue.', 'UNAUTHENTICATED');
+  }
+
+  const metaName = claims.userMetadata?.name ?? claims.userMetadata?.full_name;
+  const email = claims.email ?? '';
+  req.user = {
+    id: claims.id,
+    email,
+    name: typeof metaName === 'string' && metaName.trim() ? metaName.trim() : email.split('@')[0] || 'there',
+  };
   next();
 }
 
-const signupSchema = z.object({
-  name: z.string().trim().min(1, 'Name is required').max(80),
-  email: z.email('Enter a valid email address').max(200).transform((v) => v.toLowerCase()),
-  password: z.string().min(8, 'Password must be at least 8 characters').max(128),
-});
-
-const loginSchema = z.object({
-  email: z.email('Enter a valid email address').transform((v) => v.toLowerCase()),
-  password: z.string().min(1, 'Password is required').max(128),
-});
-
-// Compared against when the email is unknown so login timing does not reveal which emails exist.
-const DUMMY_HASH = bcrypt.hashSync('not-a-real-password', 12);
-
 export const authRouter = Router();
-const limiter = rateLimit(20, 15 * 60 * 1000);
 
-authRouter.post('/signup', limiter, async (req, res) => {
-  const { name, email, password } = signupSchema.parse(req.body);
-  if (one('SELECT id FROM users WHERE email = ?', email)) {
-    throw new HttpError(409, 'An account with this email already exists.');
-  }
-  const id = randomUUID();
-  const hash = await bcrypt.hash(password, 12);
-  run('INSERT INTO users (id, email, name, password_hash) VALUES (?, ?, ?, ?)', id, email, name, hash);
-  const user: AuthUser = { id, email, name };
-  issueSession(res, user);
-  res.status(201).json({ user });
-});
-
-authRouter.post('/login', limiter, async (req, res) => {
-  const { email, password } = loginSchema.parse(req.body);
-  const row = one<UserRow>('SELECT id, email, name, password_hash FROM users WHERE email = ?', email);
-  const ok = await bcrypt.compare(password, row?.password_hash ?? DUMMY_HASH);
-  if (!row || !ok) throw new HttpError(401, 'Invalid email or password.');
-  const user: AuthUser = { id: row.id, email: row.email, name: row.name };
-  issueSession(res, user);
-  res.json({ user });
-});
-
-authRouter.post('/logout', (_req, res) => {
-  res.clearCookie(COOKIE_NAME, { path: '/' });
-  res.json({ ok: true });
-});
-
-authRouter.get('/me', requireAuth, (req, res) => {
+authRouter.get('/me', requireAuth, async (req, res) => {
   const userId = req.user!.id;
-  const hasProfile = !!one('SELECT user_id FROM profiles WHERE user_id = ?', userId);
-  const hasResume = !!one('SELECT user_id FROM resumes WHERE user_id = ?', userId);
+  const [profile, resume] = await Promise.all([store.getProfile(userId), store.getResume(userId)]);
+  const hasProfile = !!profile;
+  const hasResume = !!resume;
   res.json({
     user: req.user,
     onboarding: { hasProfile, hasResume, complete: hasProfile && hasResume },

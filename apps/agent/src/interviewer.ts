@@ -4,6 +4,12 @@ import { cfg } from './env.js';
 import { buildInstructions, STAGES, type Stage } from './prompts.js';
 import type { Assessment, CandidateContext, InterviewReport } from './types.js';
 
+/**
+ * Stand-in user message for the opening turn. Some chat templates (Qwen on Groq) reject a conversation with no
+ * user message at all, which silently broke the greeting. It is dropped from the saved transcript.
+ */
+export const CANDIDATE_JOINED_MARKER = '[The candidate has just joined the call.]';
+
 /** Mutable interview progress shared between the agent, its tools, and the worker's finalizer. */
 export class InterviewState {
   stage: Stage = 'warmup';
@@ -18,6 +24,8 @@ export class InterviewState {
   constructor(
     readonly candidate: CandidateContext,
     readonly maxMinutes: number,
+    /** 'demo' is the free short interview: it never goes beyond the intermediate stage. */
+    readonly mode: 'demo' | 'byok' = 'byok',
   ) {}
 
   elapsedMinutes(): number {
@@ -31,11 +39,18 @@ export class InterviewState {
       elapsedMinutes: this.elapsedMinutes(),
       maxMinutes: this.maxMinutes,
       timeNotice: this.timeNotice,
+      demo: this.mode === 'demo',
     });
   }
 
   /** Stages only move forward. Returns an explanation for the model when the move is not allowed. */
   advance(next: Stage): { ok: true } | { ok: false; message: string } {
+    if (this.mode === 'demo' && next === 'advanced') {
+      return {
+        ok: false,
+        message: 'This is a short demo interview, so there is no advanced stage. Stay in the intermediate stage, then move to wrapup.',
+      };
+    }
     if (STAGES.indexOf(next) <= STAGES.indexOf(this.stage)) {
       return { ok: false, message: `You are already in the ${this.stage} stage; stages only move forward. Carry on.` };
     }
@@ -124,6 +139,7 @@ export class InterviewerAgent extends voice.Agent {
   override async onEnter(): Promise<void> {
     this.scheduleTimeChecks();
     this.session.generateReply({
+      userInput: CANDIDATE_JOINED_MARKER,
       instructions:
         'Begin the interview now. Follow the warm-up stage guidance: greet the candidate by first name, introduce yourself, and ask your first easy question.',
     });

@@ -60,6 +60,13 @@ export function Shell({ children }: { children: ReactNode }) {
                 >
                   Profile and resume
                 </Link>
+                <Link
+                  className="nav__link"
+                  href="/settings"
+                  aria-current={pathname === '/settings' ? 'page' : undefined}
+                >
+                  API keys
+                </Link>
                 <button type="button" className="btn btn--quiet" onClick={signOut}>
                   Sign out
                 </button>

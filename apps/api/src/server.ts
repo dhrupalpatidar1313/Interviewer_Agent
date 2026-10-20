@@ -1,28 +1,33 @@
-import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express, { type ErrorRequestHandler } from 'express';
+import helmet from 'helmet';
 import multer from 'multer';
 import { z } from 'zod';
 import { authRouter } from './auth.js';
-import './db.js';
 import { env } from './env.js';
-import { HttpError } from './http.js';
+import { HttpError, rateLimit } from './http.js';
 import { internalRouter } from './routes/internal.js';
 import { interviewsRouter } from './routes/interviews.js';
 import { profileRouter } from './routes/profile.js';
+import { providersRouter } from './routes/providers.js';
 import swaggerUi from 'swagger-ui-express';
 import { swaggerDocument } from './swagger.js';
 
 const app = express();
 app.disable('x-powered-by');
+// A JSON API: no CSP (it would break the Swagger UI page and protects nothing here). CORS decides who may call it, so
+// the resource policy must not block the web origin.
+app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 // The Next.js dev proxy runs on loopback and forwards the client IP.
 app.set('trust proxy', 'loopback');
 
-app.use(cors({ origin: env.WEB_ORIGIN, credentials: true }));
-app.use(cookieParser());
+// Sign-in is a Supabase access token in the Authorization header, so there are no cookies to allow.
+app.use(cors({ origin: env.WEB_ORIGIN, allowedHeaders: ['authorization', 'content-type'] }));
 
 // Agent-only routes bring their own (larger) JSON parser.
-app.use('/internal', internalRouter);
+// The agent is the only legitimate caller and makes a handful of requests per interview, so a generous per-IP cap
+// still shuts down anyone guessing the shared key.
+app.use('/internal', rateLimit(600, 60 * 1000), internalRouter);
 
 app.use(express.json({ limit: '100kb' }));
 
@@ -35,6 +40,7 @@ app.get('/api/health', (_req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/interviews', interviewsRouter);
+app.use('/api/providers', providersRouter);
 
 app.use((_req, _res, next) => {
   next(new HttpError(404, 'Not found'));

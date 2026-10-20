@@ -28,12 +28,12 @@ export function requireInternalKey(req: Request, _res: Response, next: NextFunct
   next();
 }
 
-/** Minimal fixed-window rate limiter keyed by client IP. Fine for a single instance. */
-export function rateLimit(max: number, windowMs: number) {
+/** Minimal fixed-window rate limiter, keyed by client IP unless `keyOf` says otherwise. Fine for a single instance. */
+export function rateLimit(max: number, windowMs: number, keyOf?: (req: Request) => string | undefined) {
   const hits = new Map<string, { count: number; resetAt: number }>();
   return (req: Request, _res: Response, next: NextFunction) => {
     const now = Date.now();
-    const key = req.ip ?? 'unknown';
+    const key = keyOf?.(req) ?? req.ip ?? 'unknown';
     const entry = hits.get(key);
     if (!entry || entry.resetAt < now) {
       hits.set(key, { count: 1, resetAt: now + windowMs });

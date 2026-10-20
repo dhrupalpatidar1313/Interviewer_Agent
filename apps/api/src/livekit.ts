@@ -17,6 +17,11 @@ export async function createCandidateToken(opts: {
   displayName: string;
   roomName: string;
   interviewId: string;
+  /**
+   * False for a rejoin: the interviewer is already in the room waiting, and dispatching another one would put two
+   * interviewers in the same conversation.
+   */
+  dispatch?: boolean;
 }): Promise<string> {
   const at = new AccessToken(env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET, {
     identity: participantIdentity(opts.userId),
@@ -30,14 +35,16 @@ export async function createCandidateToken(opts: {
     canSubscribe: true,
     canPublishData: true,
   });
-  at.roomConfig = new RoomConfiguration({
-    agents: [
-      new RoomAgentDispatch({
-        agentName: env.AGENT_NAME,
-        metadata: JSON.stringify({ interviewId: opts.interviewId }),
-      }),
-    ],
-  });
+  if (opts.dispatch !== false) {
+    at.roomConfig = new RoomConfiguration({
+      agents: [
+        new RoomAgentDispatch({
+          agentName: env.AGENT_NAME,
+          metadata: JSON.stringify({ interviewId: opts.interviewId }),
+        }),
+      ],
+    });
+  }
   return at.toJwt();
 }
 

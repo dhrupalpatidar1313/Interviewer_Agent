@@ -75,6 +75,8 @@ export interface TranscriptTurn {
 export interface InterviewSummary {
   id: string;
   status: InterviewStatus;
+  /** 'demo' ran on the platform's own models, 'byok' on the candidate's. */
+  mode: 'demo' | 'byok';
   targetRole: string | null;
   experienceLevel: ExperienceLevel | null;
   createdAt: string | null;
@@ -82,6 +84,8 @@ export interface InterviewSummary {
   endedAt: string | null;
   endedBy: string | null;
   overallRating: number | null;
+  /** True while the agent is still waiting for the candidate to come back after a disconnect. */
+  canRejoin: boolean;
 }
 
 export interface InterviewDetail extends InterviewSummary {
@@ -90,3 +94,48 @@ export interface InterviewDetail extends InterviewSummary {
   transcript: TranscriptTurn[];
   assessments: Assessment[];
 }
+
+// ---- model providers ("bring your own key")
+
+export type ModelStage = 'stt' | 'llm' | 'tts';
+
+export const MODEL_STAGES: { id: ModelStage; label: string; hint: string }[] = [
+  { id: 'stt', label: 'Listening', hint: 'Speech to text: turns what you say into words.' },
+  { id: 'llm', label: 'Thinking', hint: 'The language model that asks the questions and judges your answers.' },
+  { id: 'tts', label: 'Voice', hint: 'Text to speech: the interviewer’s voice.' },
+];
+
+export interface ProviderEntry {
+  id: string;
+  label: string;
+  stages: ModelStage[];
+  keyUrl: string;
+  keyNote: string | null;
+  defaults: Partial<Record<ModelStage, { model: string; voice?: string }>>;
+  voices: string[] | null;
+  configured: boolean;
+  last4: string | null;
+  validatedAt: string | null;
+}
+
+export interface StageSelection {
+  provider: string;
+  model: string;
+  voice?: string;
+}
+
+export type ModelSelection = Record<ModelStage, StageSelection | null>;
+
+export type EntitlementInfo =
+  | { kind: 'byok' }
+  | { kind: 'demo'; maxMinutes: number }
+  | { kind: 'blocked'; code: 'PROVIDER_KEYS_REQUIRED' | 'DEMO_CAPACITY'; message: string };
+
+export interface ProvidersResponse {
+  providers: ProviderEntry[];
+  selection: ModelSelection;
+  entitlement: EntitlementInfo;
+  canSaveKeys: boolean;
+}
+
+export type ModelLists = Record<ModelStage, string[]>;

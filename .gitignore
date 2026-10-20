@@ -8,3 +8,9 @@ data
 *.db-shm
 *.db-wal
 .DS_Store
+.claude/
+*.tsbuildinfo
+logs.txt
+agent.log
+.agents/
+.claude/

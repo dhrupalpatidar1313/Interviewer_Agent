@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent } from 'react';
 import { errorMessage } from '@/lib/api';
-import { useAuth } from '@/lib/auth';
+import { EmailNotConfirmedError, useAuth } from '@/lib/auth';
 
 function safeNext(): string | null {
   const next = new URLSearchParams(window.location.search).get('next');
@@ -13,12 +13,15 @@ function safeNext(): string | null {
 
 export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
   const router = useRouter();
-  const { user, loading, login, signup } = useAuth();
+  const { user, loading, login, signup, resendConfirmation } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Set once Supabase has emailed a confirmation link (sign-up) or refused a sign-in until it is opened.
+  const [awaitingConfirmation, setAwaitingConfirmation] = useState<string | null>(null);
+  const [resent, setResent] = useState(false);
 
   const isSignup = mode === 'signup';
 
@@ -32,13 +35,68 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
     setError(null);
     setBusy(true);
     try {
-      if (isSignup) await signup(name.trim(), email.trim(), password);
-      else await login(email.trim(), password);
+      if (isSignup) {
+        const { needsConfirmation } = await signup(name.trim(), email.trim(), password);
+        if (needsConfirmation) {
+          setAwaitingConfirmation(email.trim());
+          setBusy(false);
+          return;
+        }
+      } else {
+        await login(email.trim(), password);
+      }
       router.replace(safeNext() ?? (isSignup ? '/onboarding' : '/dashboard'));
     } catch (err) {
+      if (err instanceof EmailNotConfirmedError) setAwaitingConfirmation(email.trim());
       setError(errorMessage(err));
       setBusy(false);
     }
+  }
+
+  async function resend() {
+    if (!awaitingConfirmation) return;
+    setError(null);
+    try {
+      await resendConfirmation(awaitingConfirmation);
+      setResent(true);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  if (awaitingConfirmation && (isSignup || error)) {
+    return (
+      <div className="container container--narrow page">
+        <div className="stack stack--lg" style={{ maxWidth: '28rem' }}>
+          <div className="stack">
+            <h1 className="h1">Check your email</h1>
+            <p className="lede" role="status">
+              We sent a confirmation link to <strong>{awaitingConfirmation}</strong>. Open it to finish creating your
+              account, then come back and sign in.
+            </p>
+            <p className="muted">It can take a minute. Check your spam folder if you do not see it.</p>
+          </div>
+          {error && (
+            <p className="alert" role="alert">
+              {error}
+            </p>
+          )}
+          {resent && (
+            <p className="notice" role="status">
+              Sent again. The newest link is the one that works.
+            </p>
+          )}
+          <div className="row">
+            <button className="btn btn--secondary" type="button" onClick={resend}>
+              Send the link again
+            </button>
+            <Link className="btn btn--quiet" href="/login">
+              Go to sign in
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -100,9 +158,13 @@ export function AuthForm({ mode }: { mode: 'login' | 'signup' }) {
               required
               aria-describedby={isSignup ? 'password-hint' : undefined}
             />
-            {isSignup && (
+            {isSignup ? (
               <p className="field__hint" id="password-hint">
                 At least 8 characters.
+              </p>
+            ) : (
+              <p className="field__hint">
+                <Link href="/forgot-password">Forgot your password?</Link>
               </p>
             )}
           </div>
