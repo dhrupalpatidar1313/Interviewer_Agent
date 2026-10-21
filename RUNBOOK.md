@@ -343,23 +343,66 @@ npm run start -w apps/web  # next start -p 3000
 
 Set `API_URL` (and the `SUPABASE_*` values) before `npm run build`; Next.js bakes them in. Use LiveKit Cloud (or a properly configured self-hosted LiveKit) instead of the `--dev` keys, and `NODE_ENV=production` (which makes `KEY_ENCRYPTION_SECRET` mandatory).
 
+### The API on Render and the web app on Vercel
+
+Both are deployed from the repository root, so the Docker build and Vercel install use `package-lock.json`.
+
+**API (Render, free web service, Singapore).** `render.yaml` in the repo root defines it: Dashboard -> New -> Blueprint -> pick the GitHub repository -> paste the secrets it asks for. **Push to GitHub first**: Render builds what is on the default branch. The secrets are the same names as in your `.env` (the `LIVEKIT_*` ones are the Cloud project's): `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY`, `INTERNAL_API_KEY`, `KEY_ENCRYPTION_SECRET` (the **same** value as locally, or saved candidate keys become unreadable), `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`. Later pushes redeploy automatically.
+
+```bash
+render services --confirm                        # list services (the CLI manages them; it cannot create one)
+render deploys list <service-id> --confirm
+render logs --resources <service-id> --confirm   # live logs
+```
+
+The free plan **sleeps after about 15 minutes without traffic** and the next request waits roughly half a minute for it to wake. Point a free uptime pinger (for example UptimeRobot, every 5 minutes) at `https://<service>.onrender.com/api/health` to keep it awake, which also protects the agent's end-of-interview save.
+
+**Set `TRUST_PROXY` from evidence.** It is the number of reverse proxies in front of the API, and it decides which address rate limiting treats as the caller. Too low and everyone shares one bucket; too high and a caller can fake their address. After the first deploy:
+
+```bash
+curl -s -H "x-internal-key: $INTERNAL_API_KEY" -H "x-forwarded-for: 203.0.113.9" https://<service>.onrender.com/internal/whoami
+```
+
+`ip` should be your **real** public address, not `203.0.113.9`. If it shows a proxy's address, raise `TRUST_PROXY` by one in the Render environment settings; if it shows `203.0.113.9`, lower it. `ips` and `forwardedFor` show the chain.
+
+**Web (Vercel).** Project `voice-interviewer`, root directory `apps/web`, production address `https://voice-interviewer-tau.vercel.app`. Its environment variables: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_API_URL` (the API's public address, used by the browser) and `API_URL`.
+
+```bash
+vercel env add NEXT_PUBLIC_API_URL --value https://<service>.onrender.com -e production --no-sensitive --force --yes
+vercel env add API_URL             --value https://<service>.onrender.com -e production --no-sensitive --force --yes
+vercel deploy --prod --yes     # from the repository root; NEXT_PUBLIC_* values are baked in at build time, so redeploy after changing them
+```
+
+**When the API address changes** (new host, or a new Render service), three things must follow: `WEB_ORIGIN` on the API only if the *web* address changed; the two Vercel variables above plus a redeploy; and the agent's `API_URL` secret plus `lk agent deploy` (see below). In Supabase -> Authentication -> URL Configuration, the Site URL and redirect URLs must be the web address.
+
 ### The agent on LiveKit Cloud
+
+The agent for this project is deployed to the **interviewer-agent** project (agent id in `apps/agent/livekit.toml`). The whole app must use the same project: `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` in `.env` are that project's, so the API mints tokens for the rooms the cloud agent serves. (`lk app env` exports a project's credentials; the old local-server values are kept in `.env` as `#LOCAL` comments.)
 
 ```bash
 cd apps/agent
-lk cloud auth                          # once: sign in and pick the production project
-lk agent create                        # first time: registers the agent and deploys the first version
-lk agent secrets set --help            # see how to set secrets, then set the ones below
-lk agent deploy                        # every later release
-lk agent status                        # running?
-lk agent logs                          # look for "registered worker"
+lk agent create --project interviewer-agent --region ap-south --secrets-file ./secrets.env --yes .   # first time (non-interactive needs --region: us-east | eu-central | ap-south)
+lk agent deploy --project interviewer-agent --yes .                                                 # every later release; existing secrets are kept
+lk agent status --project interviewer-agent .                                                       # wait for Running
+lk agent logs --project interviewer-agent .                                                         # look for "registered worker"
+lk agent secrets --project interviewer-agent .                                                      # list secret names
 ```
 
-The Dockerfile in `apps/agent` is self-contained (`lk` builds from that directory). Set these as agent secrets (not baked into the image): `API_URL` (the public HTTPS URL of the API), `INTERNAL_API_KEY`, `AGENT_NAME`, `GROQ_API_KEY` and/or `GOOGLE_API_KEY` for the demo models, and the `STT_PROVIDER` / `LLM_PROVIDER` / `TTS_PROVIDER` choices. `LIVEKIT_URL` and the project keys are provided by LiveKit Cloud, and `LIVEKIT_INFERENCE_*` is not needed because the agent runs inside the same project. Existing sessions keep running on the old version for up to an hour after a deploy. The Build plan allows 5 concurrent agent sessions.
+`secrets.env` is a temporary file you write (mode 600) and delete afterwards. It holds `KEY=VALUE` lines for: `API_URL` (the **public HTTPS** address of the API, see below), `INTERNAL_API_KEY`, `AGENT_NAME`, `MODEL_PROVIDER`, `STT_PROVIDER`, `LLM_PROVIDER`, `TTS_PROVIDER`, `GROQ_API_KEY`, `GROQ_LLM_MODEL` and the `INFERENCE_*` model names. **Never** put `LIVEKIT_URL` / `LIVEKIT_API_KEY` / `LIVEKIT_API_SECRET` in it: LiveKit Cloud injects them, and inference then runs on the project automatically.
 
-Because the agent now calls the API over the internet, `/internal` is reachable from outside: keep `INTERNAL_API_KEY` long and secret (it is rate-limited and compared in constant time).
+Things that bit us, so they are fixed in the repo but worth knowing:
+- The Dockerfile must install `ca-certificates` (slim Node images have none), otherwise `Room.connect()` fails with "failed to retrieve region info" on `wss://`.
+- `.dockerignore` must not exclude the Dockerfile itself; `lk` honours it when it packs the upload.
+- Existing sessions finish on the old version for up to an hour after a deploy; new sessions use the new one.
 
-Test the image locally before deploying: `docker build -t agent apps/agent`.
+**The cloud agent calls your API over the internet**, so `API_URL` must be the API's public address (the Render address above). While developing on your own machine, a temporary tunnel works: `~/.local/bin/cloudflared tunnel --no-autoupdate --url http://localhost:4000` prints a `https://….trycloudflare.com` address. That address **changes every time the tunnel restarts**; when it does, the agent's `API_URL` secret is stale and interviews will not start (the browser shows "interviewer not available"). Fix: write a one-line `secrets.env` with the new `API_URL` and run `lk agent deploy --secrets-file ./secrets.env --yes .`. For anything lasting, host the API at a fixed HTTPS address instead.
+
+Check the deployed setup end to end with a scripted, *spoken* demo interview (it signs in a throwaway user, talks to the interviewer, checks the saved transcript and report, and deletes the user):
+
+```bash
+npm run test:demo               # API and agent started locally, against the Cloud project
+npm run test:demo -- --deployed # the API already running on :4000 and the agent deployed in the cloud
+```
 
 ### Switching the demo to Gemini
 

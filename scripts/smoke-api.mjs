@@ -57,6 +57,8 @@ const server = spawn('npx', ['tsx', 'src/server.ts'], {
     SUPABASE_JWKS: JSON.stringify({ keys: [jwk] }),
     SUPABASE_JWKS_URL: '',
     MEMORY_UNCONFIRMED_USER_IDS: UNVERIFIED,
+    // Two origins, one with a trailing slash and spaces, as it might be typed into a host's settings page.
+    WEB_ORIGIN: 'http://localhost:3000 , https://app.example.com/',
     KEY_ENCRYPTION_SECRET: randomBytes(32).toString('base64'),
     DEMO_ATTEMPTS_PER_DAY: '3',
     DEMO_DAILY_LIMIT: '4',
@@ -158,6 +160,21 @@ try {
     r,
   );
 
+  // ---- CORS: the browser calls the API directly in production
+  for (const origin of ['http://localhost:3000', 'https://app.example.com']) {
+    const pre = await fetch(base + '/api/auth/me', {
+      method: 'OPTIONS',
+      headers: { origin, 'access-control-request-method': 'GET', 'access-control-request-headers': 'authorization' },
+    });
+    check(
+      `CORS preflight from ${origin} is allowed, including the Authorization header`,
+      pre.status === 204 && pre.headers.get('access-control-allow-origin') === origin && /authorization/i.test(pre.headers.get('access-control-allow-headers') ?? ''),
+      { status: pre.status, allow: pre.headers.get('access-control-allow-origin') },
+    );
+  }
+  const evil = await fetch(base + '/api/auth/me', { method: 'OPTIONS', headers: { origin: 'https://evil.example', 'access-control-request-method': 'GET' } });
+  check('CORS preflight from an unknown origin gets no allow header', !evil.headers.get('access-control-allow-origin'), evil.headers.get('access-control-allow-origin'));
+
   for (const route of ['/api/auth/signup', '/api/auth/login']) {
     r = await call('POST', route, { email: 'x@example.com', password: 'correct-horse-battery' });
     check(`${route} is gone (Supabase handles it) -> 404`, r.status === 404, r);
@@ -218,6 +235,19 @@ try {
   check('internal endpoint without key -> 401', r.status === 401, r);
 
   const ik = { 'x-internal-key': INTERNAL_KEY };
+  {
+    const saved = cookie;
+    cookie = '';
+    let who = await call('GET', '/internal/whoami');
+    check('/internal/whoami needs the internal key -> 401', who.status === 401, who);
+    who = await call('GET', '/internal/whoami', undefined, ik);
+    check('whoami with no forwarded header reports the direct (loopback) caller', who.status === 200 && /^(::1|127\.0\.0\.1|::ffff:127\.0\.0\.1)$/.test(who.json.ip) && who.json.trustProxy === 'loopback', who);
+    // The test client is loopback, which TRUST_PROXY=loopback trusts, so its forwarded address is honoured. On a host
+    // the same request from the internet must NOT be honoured: that is what the hop count in TRUST_PROXY decides.
+    who = await call('GET', '/internal/whoami', undefined, { ...ik, 'x-forwarded-for': '203.0.113.9' });
+    check('whoami shows the forwarded address a trusted proxy supplied', who.status === 200 && who.json.ip === '203.0.113.9' && who.json.forwardedFor === '203.0.113.9', who);
+    cookie = saved;
+  }
   const session = cookie;
   cookie = '';
   r = await call('GET', `/internal/interviews/${id}/context`, undefined, ik);

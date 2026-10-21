@@ -1,0 +1,13 @@
+**/node_modules
+**/dist
+**/.next
+**/.vercel
+.git
+.env
+.env.*
+**/*.log
+data
+apps/web/src
+apps/agent/src
+scripts
+supabase

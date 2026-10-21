@@ -18,11 +18,16 @@ app.disable('x-powered-by');
 // A JSON API: no CSP (it would break the Swagger UI page and protects nothing here). CORS decides who may call it, so
 // the resource policy must not block the web origin.
 app.use(helmet({ contentSecurityPolicy: false, crossOriginResourcePolicy: { policy: 'cross-origin' } }));
-// The Next.js dev proxy runs on loopback and forwards the client IP.
-app.set('trust proxy', 'loopback');
+// Behind a platform proxy the client address comes from X-Forwarded-For, counted from the right; locally the Next.js dev proxy
+// runs on loopback. Get this wrong in production and every caller shares one rate-limit bucket.
+app.set('trust proxy', /^\d+$/.test(env.TRUST_PROXY) ? Number(env.TRUST_PROXY) : env.TRUST_PROXY);
 
 // Sign-in is a Supabase access token in the Authorization header, so there are no cookies to allow.
-app.use(cors({ origin: env.WEB_ORIGIN, allowedHeaders: ['authorization', 'content-type'] }));
+// WEB_ORIGIN may list several origins, comma-separated (for example the production domain and the *.vercel.app alias).
+const webOrigins = env.WEB_ORIGIN.split(',')
+  .map((origin) => origin.trim().replace(/\/$/, ''))
+  .filter(Boolean);
+app.use(cors({ origin: webOrigins, allowedHeaders: ['authorization', 'content-type'] }));
 
 // Agent-only routes bring their own (larger) JSON parser.
 // The agent is the only legitimate caller and makes a handful of requests per interview, so a generous per-IP cap

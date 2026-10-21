@@ -1,0 +1,43 @@
+# Render Blueprint for the API (Dashboard -> New -> Blueprint -> pick this repository).
+# The web app is on Vercel and the agent on LiveKit Cloud; this file is only the API.
+services:
+  - type: web
+    name: interviewer-api
+    runtime: docker
+    plan: free
+    region: singapore
+    # Built from the repository root so the image installs exactly what package-lock.json says.
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render expects web services on port 10000 by default.
+      - key: API_PORT
+        value: "10000"
+      # Number of reverse proxies in front of the API. Start low and measure with GET /internal/whoami (RUNBOOK).
+      - key: TRUST_PROXY
+        value: "1"
+      - key: AGENT_NAME
+        value: ai-interviewer
+      # The browser origin(s) allowed to call the API (CORS), comma-separated.
+      - key: WEB_ORIGIN
+        value: https://voice-interviewer-tau.vercel.app
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: SUPABASE_SECRET_KEY
+        sync: false
+      - key: INTERNAL_API_KEY
+        sync: false
+      - key: KEY_ENCRYPTION_SECRET
+        sync: false
+      - key: LIVEKIT_URL
+        sync: false
+      - key: LIVEKIT_API_KEY
+        sync: false
+      - key: LIVEKIT_API_SECRET
+        sync: false

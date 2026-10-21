@@ -11,6 +11,9 @@ const schema = z.object({
   NODE_ENV: z.string().default('development'),
   API_PORT: z.coerce.number().int().default(4000),
   WEB_ORIGIN: z.string().default('http://localhost:3000'),
+  // How many reverse proxies sit in front of the API: a number of hops, or "loopback" locally. Hosts differ, so measure it (GET /internal/whoami).
+  // This decides which address rate limiting sees as the caller, so it must match the real topology.
+  TRUST_PROXY: z.string().default('loopback'),
   INTERNAL_API_KEY: z.string().min(16, 'INTERNAL_API_KEY must be at least 16 characters'),
 
   // Supabase: accounts (Supabase Auth) and data (Postgres through the admin client). @supabase/server reads the

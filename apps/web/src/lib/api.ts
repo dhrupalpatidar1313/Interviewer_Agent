@@ -31,7 +31,14 @@ async function accessToken(): Promise<string | null> {
   }
 }
 
-/** Calls the Next.js same-origin proxy (/api/*), which forwards to the Express API. */
+/**
+ * Where the API lives. Empty (local development): call the Next.js same-origin proxy, which forwards /api/* to the
+ * Express API. In production NEXT_PUBLIC_API_URL is the API's own address and the browser calls it directly, which keeps
+ * large uploads (resumes) off the web host's proxy; the API's CORS (WEB_ORIGIN) allows this site.
+ */
+const API_BASE = (process.env.NEXT_PUBLIC_API_URL ?? '').replace(/\/$/, '');
+
+/** Calls the API with the signed-in user's access token. */
 export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
   const isForm = typeof FormData !== 'undefined' && init.body instanceof FormData;
   const hasBody = init.body !== undefined;
@@ -42,7 +49,7 @@ export async function api<T>(path: string, init: ApiInit = {}): Promise<T> {
 
   let res: Response;
   try {
-    res = await fetch(`/api${path}`, {
+    res = await fetch(`${API_BASE}/api${path}`, {
       method: init.method ?? (hasBody ? 'POST' : 'GET'),
       headers,
       body: hasBody ? (isForm ? (init.body as FormData) : JSON.stringify(init.body)) : undefined,

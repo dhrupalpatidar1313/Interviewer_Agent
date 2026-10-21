@@ -13,4 +13,6 @@ data
 logs.txt
 agent.log
 .agents/
-.claude/
+.claude/.vercel
+.vercel
+.env*

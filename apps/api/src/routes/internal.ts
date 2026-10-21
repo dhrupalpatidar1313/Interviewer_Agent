@@ -56,6 +56,15 @@ async function resolveModels(row: InterviewRecord): Promise<Record<Stage, StageM
   return out as Record<Stage, StageModel>;
 }
 
+/**
+ * Reports what the API sees of the caller's address, so TRUST_PROXY can be set from evidence rather than guessed:
+ * send a request with a spoofed "X-Forwarded-For: 203.0.113.9"; TRUST_PROXY is right when `ip` is your real address and
+ * not the spoofed one. Needs the internal key.
+ */
+internalRouter.get('/whoami', (req, res) => {
+  res.json({ ip: req.ip, ips: req.ips, forwardedFor: req.header('x-forwarded-for') ?? null, trustProxy: req.app.get('trust proxy') });
+});
+
 internalRouter.get('/interviews/:id/context', async (req, res) => {
   const row = await getInterview(String(req.params.id));
   if (row.status !== 'created' && row.status !== 'in_progress') {
