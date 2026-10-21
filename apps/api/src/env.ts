@@ -7,6 +7,13 @@ import { parseSecretKey } from './crypto.js';
 export const rootDir = fileURLToPath(new URL('../../../', import.meta.url));
 loadDotenv({ path: `${rootDir}.env`, quiet: true });
 
+// Values pasted into a host's dashboard often carry a stray space or newline (a trailing space on LIVEKIT_URL once ended
+// up inside the join token's server address). Trim every value, including the ones libraries read straight from the
+// environment.
+for (const [key, value] of Object.entries(process.env)) {
+  if (typeof value === 'string' && value !== value.trim()) process.env[key] = value.trim();
+}
+
 const schema = z.object({
   NODE_ENV: z.string().default('development'),
   API_PORT: z.coerce.number().int().default(4000),

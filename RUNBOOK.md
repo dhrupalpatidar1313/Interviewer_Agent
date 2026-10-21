@@ -363,7 +363,7 @@ The free plan **sleeps after about 15 minutes without traffic** and the next req
 curl -s -H "x-internal-key: $INTERNAL_API_KEY" -H "x-forwarded-for: 203.0.113.9" https://<service>.onrender.com/internal/whoami
 ```
 
-`ip` should be your **real** public address, not `203.0.113.9`. If it shows a proxy's address, raise `TRUST_PROXY` by one in the Render environment settings; if it shows `203.0.113.9`, lower it. `ips` and `forwardedFor` show the chain.
+`ip` should be your **real** public address, not `203.0.113.9`. If it shows a proxy's address, raise `TRUST_PROXY` by one; if it shows `203.0.113.9`, lower it. `ips` and `forwardedFor` show the chain. Measured on Render (Singapore): the chain is `client -> Cloudflare -> Render's load balancer -> app`, so the right value is **3** (with 1 the API saw Render's internal `10.x` address, which would put every user in one rate-limit bucket). It is set in `render.yaml`, which Render re-applies on every push, so change it there rather than only in the dashboard.
 
 **Web (Vercel).** Project `voice-interviewer`, root directory `apps/web`, production address `https://voice-interviewer-tau.vercel.app`. Its environment variables: `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_API_URL` (the API's public address, used by the browser) and `API_URL`.
 
@@ -373,7 +373,7 @@ vercel env add API_URL             --value https://<service>.onrender.com -e pro
 vercel deploy --prod --yes     # from the repository root; NEXT_PUBLIC_* values are baked in at build time, so redeploy after changing them
 ```
 
-**When the API address changes** (new host, or a new Render service), three things must follow: `WEB_ORIGIN` on the API only if the *web* address changed; the two Vercel variables above plus a redeploy; and the agent's `API_URL` secret plus `lk agent deploy` (see below). In Supabase -> Authentication -> URL Configuration, the Site URL and redirect URLs must be the web address.
+**When the API address changes** (new host, or a new Render service), three things must follow: `WEB_ORIGIN` on the API only if the *web* address changed; the two Vercel variables above plus a redeploy; and the agent's `API_URL` secret plus `lk agent deploy` (see below). In Supabase -> Authentication -> URL Configuration, the **Site URL must be the web address** and the redirect URLs must include it (`https://<web>/**`; keep `http://localhost:3000/**` for local work). If not, confirmation and password-reset emails redirect to whatever the Site URL says (by default `http://localhost:3000`), the usual symptom of a missed setting. Verify without sending mail by asking Supabase where a link would go: `auth.admin.generateLink({ type: 'signup', ... })`, then `fetch(action_link, { redirect: 'manual' })` and read the `location` header.
 
 ### The agent on LiveKit Cloud
 

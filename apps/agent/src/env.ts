@@ -5,6 +5,11 @@ import { fileURLToPath } from 'node:url';
 // Repo root is three levels up from apps/agent/src (and from apps/agent/dist).
 config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
 
+// A stray space or newline pasted along with a secret is a classic deployment failure; trim every value.
+for (const [key, value] of Object.entries(process.env)) {
+  if (typeof value === 'string' && value !== value.trim()) process.env[key] = value.trim();
+}
+
 function num(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   return Number.isFinite(value) && value > 0 ? value : fallback;

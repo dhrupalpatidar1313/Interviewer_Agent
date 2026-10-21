@@ -62,7 +62,8 @@ const server = spawn('npx', ['tsx', 'src/server.ts'], {
     KEY_ENCRYPTION_SECRET: randomBytes(32).toString('base64'),
     DEMO_ATTEMPTS_PER_DAY: '3',
     DEMO_DAILY_LIMIT: '4',
-    LIVEKIT_URL: 'ws://localhost:7880',
+    // Padded on purpose: pasted values often carry a trailing space, and the API must trim it.
+    LIVEKIT_URL: 'ws://localhost:7880 ',
     LIVEKIT_API_KEY: 'devkey',
     LIVEKIT_API_SECRET: 'secretsecretsecretsecretsecret12',
     AGENT_NAME: 'ai-interviewer',
