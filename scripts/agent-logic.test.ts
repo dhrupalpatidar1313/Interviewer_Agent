@@ -132,6 +132,7 @@ const combos = [
   { stt: fake('openai', 'gpt-4o-transcribe'), llm: fake('openai', 'gpt-4.1-mini'), tts: fake('openai', 'gpt-4o-mini-tts', 'alloy') },
   { stt: fake('groq', 'whisper-large-v3-turbo'), llm: fake('groq', 'openai/gpt-oss-120b'), tts: fake('elevenlabs', 'eleven_turbo_v2_5', 'voice-id-123') },
   { stt: fake('deepgram', 'nova-3'), llm: fake('google', 'gemini-3.5-flash'), tts: fake('cartesia', 'sonic-3', 'voice-id-456') },
+  { stt: fake('deepgram', 'nova-3'), llm: fake('openrouter', 'openai/gpt-4o-mini'), tts: fake('openai', 'gpt-4o-mini-tts', 'alloy') },
   { stt: fake('google', 'gemini-3.5-transcribe-live'), llm: fake('openai', 'gpt-4.1'), tts: fake('google', 'gemini-3.8-flash-tts', 'Kore') },
 ];
 for (const combo of combos) {
@@ -140,4 +141,4 @@ for (const combo of combos) {
 }
 assert.throws(() => buildModels({ ...combos[0], tts: fake('nope', 'x') }), /Unsupported voice provider/);
 assert.throws(() => buildModels({ ...combos[0], llm: fake('elevenlabs', 'x') }), /Unsupported language-model provider/);
-console.log('PASS  all six providers can be built from a candidate\'s own keys');
+console.log('PASS  every provider can be built from a candidate\'s own keys');

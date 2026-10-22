@@ -46,6 +46,7 @@ console.log('PASS  secret key parsing and last-4 display');
 assert.ok(providerSupports('groq', 'llm') && !providerSupports('groq', 'tts'));
 assert.ok(providerSupports('elevenlabs', 'tts') && !providerSupports('elevenlabs', 'llm'));
 assert.ok(providerSupports('deepgram', 'stt') && !providerSupports('deepgram', 'tts'));
+assert.ok(providerSupports('openrouter', 'llm') && !providerSupports('openrouter', 'stt') && !providerSupports('openrouter', 'tts'));
 for (const p of Object.values(PROVIDERS)) {
   for (const stage of p.stages) assert.ok(p.defaults[stage]?.model, `${p.id} has a default ${stage} model`);
   assert.ok(p.keyUrl.startsWith('https://'));
@@ -89,6 +90,12 @@ assert.equal(calls.at(-1)!.url, 'https://api.groq.com/openai/v1/models');
 assert.equal(calls.at(-1)!.headers.authorization, 'Bearer gsk_abcdefghijkl');
 console.log('PASS  a good key is confirmed and the provider\'s models come back');
 
+const orOk = await validateKey('openrouter', 'sk-or-v1-abcdefghijkl', mockFetch(200, { data: { label: 'k' } }));
+assert.ok(orOk.ok && orOk.models.llm[0] === 'openai/gpt-4o-mini', 'OpenRouter: a valid key, default model first');
+assert.equal(calls.at(-1)!.url, 'https://openrouter.ai/api/v1/auth/key');
+const orBad = await validateKey('openrouter', 'sk-or-v1-wrongwrongwrong', mockFetch(401, { error: { message: 'No auth credentials found' } }));
+assert.ok(!orBad.ok && orBad.reason === 'invalid', 'OpenRouter: a bad key is rejected');
+
 const rejected = await validateKey('openai', 'sk-wrong-key-12345', mockFetch(401, { error: 'bad key' }));
 assert.ok(!rejected.ok && rejected.reason === 'invalid');
 const forbidden = await validateKey('google', 'AIza-wrong-key-12345', mockFetch(403, {}));
@@ -112,8 +119,8 @@ for (const bad of ['', 'short', 'has a space inside it', 'x'.repeat(401)]) {
 console.log('PASS  malformed keys are refused before any provider is called');
 
 // Only fixed provider hosts are ever contacted.
-const allowed = new Set(['api.openai.com', 'generativelanguage.googleapis.com', 'api.groq.com', 'api.deepgram.com', 'api.elevenlabs.io', 'api.cartesia.ai']);
+const allowed = new Set(['api.openai.com', 'generativelanguage.googleapis.com', 'api.groq.com', 'openrouter.ai', 'api.deepgram.com', 'api.elevenlabs.io', 'api.cartesia.ai']);
 for (const id of Object.keys(PROVIDERS) as ProviderId[]) await validateKey(id, 'a-key-for-host-check-1', mockFetch(200, {}));
 for (const c of calls) assert.ok(allowed.has(new URL(c.url).host), `unexpected host ${c.url}`);
-assert.equal(new Set(calls.map((c) => new URL(c.url).host)).size >= 6, true);
-console.log('PASS  only the six fixed provider hosts are contacted');
+assert.equal(new Set(calls.map((c) => new URL(c.url).host)).size >= 7, true);
+console.log('PASS  only the seven fixed provider hosts are contacted');

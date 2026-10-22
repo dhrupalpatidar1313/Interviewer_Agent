@@ -321,8 +321,12 @@ export function ProviderSettings() {
           const list = chosen ? (models[chosen.provider]?.[stage.id] ?? []) : [];
           const modelOptions = chosen && chosen.model && !list.includes(chosen.model) ? [chosen.model, ...list] : list;
           return (
-            <fieldset className="stack" key={stage.id} style={{ border: 0, padding: 0, margin: 0 }}>
-              <legend className="h3">{stage.label}</legend>
+            // A group with a heading rather than a <fieldset>: a <legend> sits outside the normal flow, so the page's vertical
+            // spacing did not apply to it and the heading ran into the text above.
+            <div className="stack" role="group" aria-labelledby={`stage-${stage.id}`} key={stage.id}>
+              <h3 className="h3" id={`stage-${stage.id}`}>
+                {stage.label}
+              </h3>
               <p className="muted small">{stage.hint}</p>
               <div className="pick">
                 <div className="field">
@@ -403,7 +407,7 @@ export function ProviderSettings() {
                   </div>
                 )}
               </div>
-            </fieldset>
+            </div>
           );
         })}
 

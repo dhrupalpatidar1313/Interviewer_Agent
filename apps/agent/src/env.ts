@@ -16,7 +16,8 @@ function num(name: string, fallback: number): number {
 }
 
 type SttProvider = 'inference' | 'deepgram' | 'openai' | 'groq' | 'google';
-type LlmProvider = 'inference' | 'openai' | 'groq' | 'google';
+type LlmProvider = 'inference' | 'openai' | 'groq' | 'google' | 'openrouter';
+type LlmFallback = LlmProvider | 'none';
 type TtsProvider = 'inference' | 'openai' | 'google';
 
 function pick<T extends string>(name: string, allowed: readonly T[], fallback: T): T {
@@ -46,8 +47,18 @@ export const cfg = {
   ),
   llmProvider: pick<LlmProvider>(
     'LLM_PROVIDER',
-    ['inference', 'openai', 'groq', 'google'],
+    ['inference', 'openai', 'groq', 'google', 'openrouter'],
     modelProvider === 'inference' ? 'inference' : 'openai',
+  ),
+  /**
+   * A second language model the demo falls back to when the first one fails (a rate limit, an outage), so a provider
+   * hiccup does not silence the interviewer. On by default when an OpenRouter key is set and OpenRouter is not already
+   * the main model; LLM_FALLBACK_PROVIDER=none turns it off.
+   */
+  llmFallbackProvider: pick<LlmFallback>(
+    'LLM_FALLBACK_PROVIDER',
+    ['none', 'inference', 'openai', 'groq', 'google', 'openrouter'],
+    process.env.OPENROUTER_API_KEY && process.env.LLM_PROVIDER !== 'openrouter' ? 'openrouter' : 'none',
   ),
   ttsProvider: pick<TtsProvider>('TTS_PROVIDER', ['inference', 'openai', 'google'], modelProvider === 'inference' ? 'inference' : 'openai'),
 
@@ -58,6 +69,8 @@ export const cfg = {
   groqApiKey: process.env.GROQ_API_KEY ?? '',
   groqLlmModel: process.env.GROQ_LLM_MODEL ?? 'qwen/qwen3.8-27b',
   groqSttModel: process.env.GROQ_STT_MODEL ?? 'whisper-large-v3-turbo',
+  openrouterApiKey: process.env.OPENROUTER_API_KEY ?? '',
+  openrouterLlmModel: process.env.OPENROUTER_LLM_MODEL ?? 'openai/gpt-4o-mini',
   googleApiKey: process.env.GOOGLE_API_KEY ?? '',
   geminiLlmModel: process.env.GEMINI_LLM_MODEL ?? 'gemini-3.5-flash',
   geminiSttModel: process.env.GEMINI_STT_MODEL ?? 'gemini-3.5-transcribe-live',

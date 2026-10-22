@@ -64,7 +64,7 @@ GROQ_API_KEY=<your Groq key>
 GROQ_LLM_MODEL=qwen/qwen3.8-27b
 ```
 
-Options: `STT_PROVIDER` = `inference | deepgram | openai | groq | google`; `LLM_PROVIDER` = `inference | openai | groq | google`; `TTS_PROVIDER` = `inference | openai | google`. Unset, each follows `MODEL_PROVIDER` (`plugins` or `inference`).
+Options: `STT_PROVIDER` = `inference | deepgram | openai | groq | google`; `LLM_PROVIDER` = `inference | openai | groq | google | openrouter`; `TTS_PROVIDER` = `inference | openai | google`. Unset, each follows `MODEL_PROVIDER` (`plugins` or `inference`).
 
 ### Supabase and key storage
 
@@ -190,7 +190,7 @@ grep -nE "ERROR|agent session error|llm_error|statusCode|model_not_found" agent.
 | --- | --- | --- |
 | `llm_error ... model_not_found ... statusCode: 404` | The Groq model name does not exist for your key | List your models (below) and set `GROQ_LLM_MODEL` to one of them, then restart the agent |
 | `statusCode: 401` | Wrong or empty `GROQ_API_KEY` | Fix the key, restart the agent |
-| `statusCode: 429` | Groq rate limit | Wait, or use a smaller model |
+| `statusCode: 429` | Groq rate limit | Wait, use a smaller model, or set `OPENROUTER_API_KEY`: the demo then falls back to OpenRouter automatically when Groq fails |
 | `GROQ_API_KEY is required ...` | Groq selected but no key | Set `GROQ_API_KEY`, restart |
 | Errors mentioning `agent-gateway.livekit.cloud` or `401` on `/v1/stt` or `/v1/tts` | `LIVEKIT_INFERENCE_API_KEY` / `_SECRET` missing, wrong, or not from a Cloud project | Re-copy both from the Cloud dashboard, keep names exactly as in section 3 |
 

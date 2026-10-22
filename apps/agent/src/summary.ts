@@ -50,7 +50,7 @@ export async function buildEarlyReport(
   chatCtx.addMessage({
     role: 'system',
     content:
-      'You assess a job interview that ended early. Be honest and specific, base everything only on what the candidate actually said, and do not invent answers. Reply with a single JSON object and nothing else: {"overallRating": 1-5 integer, "summary": "3 to 5 sentences, mention that the interview ended early", "strengths": ["..."], "improvements": ["..."]}.',
+      'You assess a job interview that ended early. Be honest and specific, base everything only on what the candidate actually said, and do not invent answers. Rate only the quality of the answers actually given: never lower the rating because the interview was short or ended early, and if there is too little to judge fairly, say so in the summary and keep the rating neutral (3). Reply with a single JSON object and nothing else: {"overallRating": 1-5 integer, "summary": "3 to 5 sentences, mention that the interview ended early", "strengths": ["..."], "improvements": ["..."]}.',
   });
   chatCtx.addMessage({
     role: 'user',

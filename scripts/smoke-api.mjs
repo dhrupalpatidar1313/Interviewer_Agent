@@ -299,9 +299,9 @@ try {
   // ---- the free demo is one-shot; after that, the candidate's own keys
   r = await call('GET', '/api/providers');
   check(
-    'providers: all six listed, demo already used, saving keys is available',
+    'providers: all seven listed, demo already used, saving keys is available',
     r.status === 200 &&
-      r.json.providers.length === 6 &&
+      r.json.providers.length === 7 &&
       r.json.entitlement.kind === 'blocked' &&
       r.json.entitlement.code === 'PROVIDER_KEYS_REQUIRED' &&
       r.json.canSaveKeys === true,

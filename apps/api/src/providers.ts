@@ -6,7 +6,7 @@
 export type Stage = 'stt' | 'llm' | 'tts';
 export const STAGES: readonly Stage[] = ['stt', 'llm', 'tts'];
 
-export type ProviderId = 'openai' | 'google' | 'groq' | 'deepgram' | 'elevenlabs' | 'cartesia';
+export type ProviderId = 'openai' | 'google' | 'groq' | 'openrouter' | 'deepgram' | 'elevenlabs' | 'cartesia';
 
 export interface StageDefaults {
   model: string;
@@ -64,6 +64,14 @@ export const PROVIDERS: Record<ProviderId, ProviderInfo> = {
       llm: { model: 'openai/gpt-oss-120b' },
     },
   },
+  openrouter: {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    stages: ['llm'],
+    keyUrl: 'https://openrouter.ai/keys',
+    keyNote: 'One key for hundreds of models, some of them free. The language model only; pair it with speech and voice providers.',
+    defaults: { llm: { model: 'openai/gpt-4o-mini' } },
+  },
   deepgram: {
     id: 'deepgram',
     label: 'Deepgram',
@@ -117,6 +125,11 @@ const FALLBACK_MODELS: Record<ProviderId, ModelLists> = {
   openai: { stt: ['gpt-4o-transcribe', 'gpt-4o-mini-transcribe'], llm: ['gpt-4.1-mini', 'gpt-4.1'], tts: ['gpt-4o-mini-tts'] },
   google: { stt: ['gemini-3.5-transcribe-live'], llm: ['gemini-3.5-flash'], tts: ['gemini-3.8-flash-tts', 'gemini-3.8-flash-lite-tts'] },
   groq: { stt: ['whisper-large-v3-turbo', 'whisper-large-v3'], llm: ['openai/gpt-oss-120b', 'openai/gpt-oss-20b'], tts: [] },
+  openrouter: {
+    stt: [],
+    llm: ['openai/gpt-4o-mini', 'meta-llama/llama-3.3-70b-instruct', 'mistralai/mistral-small-3.2-24b-instruct', 'openai/gpt-4.1-mini'],
+    tts: [],
+  },
   deepgram: { stt: ['nova-3', 'nova-2'], llm: [], tts: [] },
   elevenlabs: { stt: [], llm: [], tts: ['eleven_turbo_v2_5', 'eleven_flash_v2_5', 'eleven_multilingual_v2'] },
   cartesia: { stt: [], llm: [], tts: ['sonic-3', 'sonic-2', 'sonic-turbo'] },
@@ -201,6 +214,13 @@ function probeFor(provider: ProviderId, key: string): Probe {
         url: 'https://api.groq.com/openai/v1/models',
         headers: { authorization: `Bearer ${key}` },
         parse: (b) => classifyGroq(asArray((b as { data?: unknown })?.data).map((m) => String((m as { id?: string }).id ?? ''))),
+      };
+    case 'openrouter':
+      // /auth/key answers 200 only for a real key (the model list is public, so it would not prove anything).
+      return {
+        url: 'https://openrouter.ai/api/v1/auth/key',
+        headers: { authorization: `Bearer ${key}` },
+        parse: () => EMPTY,
       };
     case 'deepgram':
       return {
